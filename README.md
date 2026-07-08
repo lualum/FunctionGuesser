@@ -47,7 +47,7 @@ Guesses must be functions of `x` and cannot reference `f(x)` directly.
 
 ## Matching
 
-The checker samples the secret function and the guessed function from `x=-10` to `x=10`. A puzzle is solved when enough finite sample points match within a small absolute and relative tolerance.
+The checker samples the secret function and the guessed function densely from `x=-10` to `x=10`, plus a wider `x=-1000` to `x=1000` pass for larger values. A puzzle is solved when enough finite secret sample points match within a small percentage tolerance.
 
 This means two functions that are equivalent over the sampled range can solve the same puzzle, even if they are written differently.
 

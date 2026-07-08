@@ -5,9 +5,9 @@
   const SECRET_EXPR_ID = "__fg_hidden_secret";
   const CHECK_EXPR_ID = "__fg_hidden_check";
   const MAX_FORMULA_LENGTH = 260;
-  const MATCH_ABS_TOLERANCE = 0.001;
-  const MATCH_REL_TOLERANCE = 0.0001;
-  const SAMPLE_POINTS = makeSamplePoints(-10, 10, 401);
+  const MATCH_PERCENT_TOLERANCE = 0.001;
+  const MATCH_ZERO_TOLERANCE = 0.001;
+  const SAMPLE_POINTS = makeSamplePoints();
   const MIN_FINITE_SECRET_POINTS = 120;
   const SCAN_DELAY_MS = 500;
   const DEFAULT_PUZZLE_NAME = "Untitled Puzzle";
@@ -33,8 +33,13 @@
     "ln",
     "log",
     "sqrt",
+    "gcd",
     "left",
     "right",
+    "ge",
+    "geq",
+    "le",
+    "leq",
     "frac",
     "cdot",
     "times",
@@ -534,7 +539,8 @@
       };
     }
 
-    if (text.includes("=") || /\by\b/i.test(text)) return null;
+    const expressionCore = removeTrailingBounds(text);
+    if (/[=~<>]/.test(expressionCore) || /\by\b/i.test(expressionCore)) return null;
 
     return {
       body: text,
@@ -547,7 +553,7 @@
 
     if (!body) return invalid("Empty function.");
     if (body.length > MAX_FORMULA_LENGTH) return invalid("That function is too long.");
-    if (/[=~<>]/.test(body)) return invalid("Use a single function of x.");
+    if (/[=~<>]/.test(removeTrailingBounds(body))) return invalid("Use a single function of x.");
     if (containsFCall(body)) return invalid("Guesses must not reference f(x).");
     if (containsOnlyDisallowedSymbols(body)) {
       return invalid("Use only x and standard Desmos built-ins.");
@@ -558,6 +564,49 @@
       body,
       message: ""
     };
+  }
+
+  function removeTrailingBounds(body) {
+    let text = String(body || "").trim();
+
+    while (text.endsWith("}")) {
+      const bounds = getTrailingBraceBounds(text);
+      if (!bounds) break;
+
+      text = text.slice(0, bounds.start).trim();
+    }
+
+    return text;
+  }
+
+  function getTrailingBraceBounds(text) {
+    let depth = 0;
+
+    for (let i = text.length - 1; i >= 0; i -= 1) {
+      const char = text[i];
+      if (char === "}") {
+        depth += 1;
+      } else if (char === "{") {
+        depth -= 1;
+        if (depth === 0) {
+          const content = text.slice(i + 1, text.length - 1);
+          if (!hasComparisonOperator(content)) return null;
+
+          let start = i;
+          if (text.slice(0, start).endsWith("\\left\\")) {
+            start -= "\\left\\".length;
+          }
+
+          return { start };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function hasComparisonOperator(text) {
+    return /(?:[=<>]|\\(?:geq?|leq?)(?![a-z]))/.test(text);
   }
 
   function containsOnlyDisallowedSymbols(body) {
@@ -617,24 +666,23 @@
       const fFinite = isFiniteNumber(fValue);
       const gFinite = isFiniteNumber(gValue);
 
-      if (fFinite) {
-        finiteSecretPoints += 1;
-        if (!gFinite) {
-          return { ok: false, matchedPoints, maxGap };
-        }
+      if (!fFinite) {
+        // Undefined secret samples are outside the target domain, so guesses do not need to repeat those bounds.
+        continue;
+      }
 
-        const gap = Math.abs(fValue - gValue);
-        const tolerance =
-          MATCH_ABS_TOLERANCE + MATCH_REL_TOLERANCE * Math.max(Math.abs(fValue), Math.abs(gValue), 1);
-        maxGap = Math.max(maxGap, gap);
-        if (gap > tolerance) {
-          return { ok: false, matchedPoints, maxGap };
-        }
-
-        matchedPoints += 1;
-      } else if (gFinite) {
+      finiteSecretPoints += 1;
+      if (!gFinite) {
         return { ok: false, matchedPoints, maxGap };
       }
+
+      const gap = Math.abs(fValue - gValue);
+      maxGap = Math.max(maxGap, gap);
+      if (!isWithinPercentTolerance(fValue, gValue)) {
+        return { ok: false, matchedPoints, maxGap };
+      }
+
+      matchedPoints += 1;
     }
 
     return {
@@ -642,6 +690,17 @@
       matchedPoints,
       maxGap
     };
+  }
+
+  function isWithinPercentTolerance(expected, actual) {
+    const gap = Math.abs(expected - actual);
+    const scale = Math.abs(expected);
+
+    if (scale < MATCH_ZERO_TOLERANCE) {
+      return gap <= MATCH_ZERO_TOLERANCE;
+    }
+
+    return gap / scale <= MATCH_PERCENT_TOLERANCE;
   }
 
   function completePuzzle(candidate) {
@@ -787,13 +846,23 @@
     textarea.remove();
   }
 
-  function makeSamplePoints(left, right, count) {
+  function makeSamplePoints() {
     const points = [];
+    addSampleRange(points, -10, 10, 401);
+    addSampleRange(points, -1000, 1000, 401);
+
+    return Array.from(new Set(points)).sort((a, b) => a - b);
+  }
+
+  function addSampleRange(points, left, right, count) {
     const step = (right - left) / (count - 1);
     for (let i = 0; i < count; i += 1) {
-      points.push(left + step * i);
+      points.push(roundSamplePoint(left + step * i));
     }
-    return points;
+  }
+
+  function roundSamplePoint(value) {
+    return Number(value.toFixed(6));
   }
 
   function isFiniteNumber(value) {
