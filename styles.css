@@ -1,0 +1,294 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-strong: #edf3f1;
+  --ink: #1b2428;
+  --muted: #667277;
+  --line: #d8e0e3;
+  --green: #197b5b;
+  --green-dark: #105c44;
+  --rose: #b33d55;
+  --shadow: 0 18px 55px rgba(27, 36, 40, 0.13);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.actionbar {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) auto auto auto minmax(240px, 1fr) minmax(180px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 10px clamp(14px, 2vw, 28px);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.actionbar[hidden] {
+  display: none;
+}
+
+.inline-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-field span,
+.field span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+input,
+textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  outline: none;
+}
+
+input {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+textarea {
+  min-height: 106px;
+  resize: vertical;
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(25, 123, 91, 0.14);
+}
+
+.link-output {
+  font-size: 0.9rem;
+}
+
+.button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.button.primary {
+  background: var(--green);
+  color: white;
+}
+
+.button.primary:hover {
+  background: var(--green-dark);
+}
+
+.button.secondary {
+  background: var(--surface-strong);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.button.secondary:hover {
+  border-color: var(--green);
+}
+
+.status,
+.puzzle-meta {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.status.is-error {
+  color: var(--rose);
+  font-weight: 750;
+}
+
+.status.is-good {
+  color: var(--green-dark);
+  font-weight: 750;
+}
+
+#playerActions {
+  grid-template-columns: minmax(220px, auto) minmax(0, 1fr);
+}
+
+.puzzle-meta {
+  color: var(--green-dark);
+  font-weight: 850;
+}
+
+.main-stage {
+  min-height: 0;
+  display: grid;
+}
+
+.view {
+  display: none;
+  min-height: calc(100vh - 123px);
+}
+
+.view.is-active {
+  display: block;
+}
+
+.calculator {
+  width: 100%;
+  height: calc(100vh - 123px);
+  min-height: 520px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(27, 36, 40, 0.52);
+  z-index: 20;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.complete-dialog {
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: auto;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: clamp(18px, 3vw, 28px);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 15px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--green-dark);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.complete-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+@media (max-width: 980px) {
+  .actionbar {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .link-output,
+  .status {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .actionbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inline-field,
+  .link-output,
+  .status,
+  .puzzle-meta {
+    grid-column: 1 / -1;
+  }
+
+  .calculator {
+    height: calc(100vh - 190px);
+  }
+}
