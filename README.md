@@ -31,7 +31,7 @@ You can also open `index.html` directly, but serving over `localhost` gives the 
 ### Create a puzzle
 
 1. Open the app without a `#play=` URL hash.
-2. Edit the starter Desmos expression into a function like `f(x)=x^2`.
+2. Edit the starter Desmos expression into a function like `f(x)=x^2` or `g(x)=x^2`.
 3. Click **Export Link**.
 4. Enter a name, or leave it blank for `Anonymous`.
 5. Share the copied link.

@@ -5,6 +5,7 @@
   const SECRET_EXPR_ID = "__fg_hidden_secret";
   const TARGET_EXPR_ID = "__fg_target_graph";
   const CHECK_EXPR_ID = "__fg_hidden_check";
+  const CHECK_FUNCTION_NAME = "q_{fgcheck}";
   const MAX_FORMULA_LENGTH = 260;
   const MATCH_PERCENT_TOLERANCE = 0.001;
   const MATCH_ZERO_TOLERANCE = 0.001;
@@ -100,7 +101,7 @@
       await openPuzzleToken(token);
     } else {
       showCreateView();
-      setStatus(dom.creatorStatus, "Edit f(x) in Desmos, then export.");
+      setStatus(dom.creatorStatus, "Edit f(x) or g(x) in Desmos, then export.");
     }
   }
 
@@ -267,7 +268,7 @@
   async function getValidatedCreatorEquation() {
     const found = getCreatorFunction();
     if (!found) {
-      throw new Error("Create an expression like f(x)=x^2 before exporting.");
+      throw new Error("Create an expression like f(x)=x^2 or g(x)=x^2 before exporting.");
     }
 
     const validation = validateStandaloneBody(found.body);
@@ -275,7 +276,7 @@
 
     const analysis = await waitForAnalysis(state.creatorCalc, found.id, 1500);
     if (analysis && analysis.isError) {
-      throw new Error(analysis.errorMessage || "Desmos rejected f(x).");
+      throw new Error(analysis.errorMessage || "Desmos rejected that function.");
     }
 
     return found.body;
@@ -285,7 +286,7 @@
     const expressions = state.creatorCalc.getExpressions();
     for (const expression of expressions) {
       if (!expression || expression.type === "folder" || expression.type === "text") continue;
-      const body = extractFBody(expression.latex || "");
+      const body = extractCreatorFunctionBody(expression.latex || "");
       if (body) {
         return {
           id: expression.id,
@@ -344,10 +345,10 @@
     return name ? name.slice(0, 80) : DEFAULT_PUZZLE_NAME;
   }
 
-  function extractFBody(latex) {
+  function extractCreatorFunctionBody(latex) {
     const match = String(latex || "")
       .trim()
-      .match(/^f\s*(?:\\left)?\(\s*x\s*(?:\\right)?\)\s*=\s*(.+)$/i);
+      .match(/^[fg]\s*(?:\\left)?\(\s*x\s*(?:\\right)?\)\s*=\s*(.+)$/i);
     return match ? match[1].trim() : "";
   }
 
@@ -426,19 +427,19 @@
     state.sampleRows = SAMPLE_POINTS.map((point) => {
       const pointLatex = formatPoint(point);
       const fHelper = state.playerCalc.HelperExpression({ latex: `f(${pointLatex})` });
-      const gHelper = state.playerCalc.HelperExpression({ latex: `g(${pointLatex})` });
+      const checkHelper = state.playerCalc.HelperExpression({ latex: `${CHECK_FUNCTION_NAME}(${pointLatex})` });
       const row = {
         fHelper,
-        gHelper,
+        checkHelper,
         fValue: fHelper.numericValue,
-        gValue: gHelper.numericValue
+        checkValue: checkHelper.numericValue
       };
 
       fHelper.observe("numericValue", () => {
         row.fValue = fHelper.numericValue;
       });
-      gHelper.observe("numericValue", () => {
-        row.gValue = gHelper.numericValue;
+      checkHelper.observe("numericValue", () => {
+        row.checkValue = checkHelper.numericValue;
       });
 
       return row;
@@ -643,7 +644,7 @@
     runInternalPlayerChange(() => {
       state.playerCalc.setExpression({
         id: CHECK_EXPR_ID,
-        latex: `g(x)=${candidate.body}`,
+        latex: `${CHECK_FUNCTION_NAME}(x)=${candidate.body}`,
         hidden: true,
         secret: true
       });
@@ -670,9 +671,9 @@
 
     for (const row of state.sampleRows) {
       const fValue = row.fValue;
-      const gValue = row.gValue;
+      const checkValue = row.checkValue;
       const fFinite = isFiniteNumber(fValue);
-      const gFinite = isFiniteNumber(gValue);
+      const checkFinite = isFiniteNumber(checkValue);
 
       if (!fFinite) {
         // Undefined secret samples are outside the target domain, so guesses do not need to repeat those bounds.
@@ -680,13 +681,13 @@
       }
 
       finiteSecretPoints += 1;
-      if (!gFinite) {
+      if (!checkFinite) {
         return { ok: false, matchedPoints, maxGap };
       }
 
-      const gap = Math.abs(fValue - gValue);
+      const gap = Math.abs(fValue - checkValue);
       maxGap = Math.max(maxGap, gap);
-      if (!isWithinPercentTolerance(fValue, gValue)) {
+      if (!isWithinPercentTolerance(fValue, checkValue)) {
         return { ok: false, matchedPoints, maxGap };
       }
 
