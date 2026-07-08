@@ -4,16 +4,13 @@
   const CREATOR_EXPR_ID = "creator-secret-function";
   const SECRET_EXPR_ID = "__fg_hidden_secret";
   const CHECK_EXPR_ID = "__fg_hidden_check";
-  const TOKEN_PREFIX_AES = "fg2.";
-  const TOKEN_PREFIX_FALLBACK = "fg1.";
-  const APP_PEPPER = "FunctionGuesser.Desmos.HiddenFunction.v2.2026";
-  const AES_ITERATIONS = 90000;
   const MAX_FORMULA_LENGTH = 260;
   const MATCH_ABS_TOLERANCE = 0.001;
   const MATCH_REL_TOLERANCE = 0.0001;
   const SAMPLE_POINTS = makeSamplePoints(-10, 10, 401);
   const MIN_FINITE_SECRET_POINTS = 120;
   const SCAN_DELAY_MS = 500;
+  const DEFAULT_PUZZLE_NAME = "Untitled Puzzle";
   const ALLOWED_WORDS = new Set([
     "x",
     "e",
@@ -53,6 +50,8 @@
     "sign"
   ]);
 
+  const puzzleCrypto = window.FunctionGuesserCrypto;
+
   const state = {
     creatorCalc: null,
     playerCalc: null,
@@ -65,7 +64,7 @@
     internalPlayerChanges: 0,
     checkedCandidates: 0,
     solvedGuess: "",
-    solvedLabel: ""
+    lastPuzzleName: ""
   };
 
   const dom = {};
@@ -75,6 +74,12 @@
   async function init() {
     cacheDom();
     bindEvents();
+
+    if (!puzzleCrypto) {
+      setStatus(dom.creatorStatus, "Function Guesser crypto could not load. Refresh and try again.", "error");
+      disableButtons();
+      return;
+    }
 
     if (!window.Desmos) {
       setStatus(dom.creatorStatus, "Desmos could not load. Check your connection and refresh.", "error");
@@ -99,18 +104,17 @@
       "playerActions",
       "creatorView",
       "playerView",
-      "authorInput",
       "exportButton",
-      "puzzleLink",
-      "copyLinkButton",
-      "openPuzzleButton",
       "creatorStatus",
       "playerStatus",
-      "puzzleAuthor",
+      "puzzleName",
       "creatorCalculator",
       "playerCalculator",
+      "nameOverlay",
+      "nameForm",
+      "puzzleNameInput",
+      "cancelNameButton",
       "completeOverlay",
-      "completeSummary",
       "includeSpoiler",
       "discordMessage",
       "copyDiscordButton",
@@ -122,8 +126,6 @@
 
   function bindEvents() {
     dom.exportButton.addEventListener("click", handleExport);
-    dom.copyLinkButton.addEventListener("click", handleCopyLink);
-    dom.openPuzzleButton.addEventListener("click", handleOpenPuzzle);
     dom.includeSpoiler.addEventListener("change", updateDiscordMessage);
     dom.copyDiscordButton.addEventListener("click", handleCopyDiscord);
     dom.closeOverlayButton.addEventListener("click", closeCompletedOverlay);
@@ -133,8 +135,6 @@
   function disableButtons() {
     [
       dom.exportButton,
-      dom.copyLinkButton,
-      dom.openPuzzleButton,
       dom.copyDiscordButton,
       dom.closeOverlayButton
     ].forEach((button) => {
@@ -168,7 +168,7 @@
 
     state.creatorCalc.setExpression({
       id: CREATOR_EXPR_ID,
-      latex: "f(x)=x^2-3x+2",
+      latex: "f(x)=x",
       color: "#197b5b",
       lineWidth: 3
     });
@@ -224,8 +224,8 @@
     dom.playerActions.hidden = false;
     initPlayerCalculator();
     if (!hasPuzzle) {
-      dom.puzzleAuthor.textContent = "No puzzle loaded";
-      setStatus(dom.playerStatus, "Open a puzzle link or create one.", "error");
+      dom.puzzleName.textContent = "No puzzle loaded";
+      setStatus(dom.playerStatus, "Load a puzzle link or create one.", "error");
     }
     if (state.playerCalc) state.playerCalc.resize();
   }
@@ -235,16 +235,22 @@
 
     try {
       const equation = await getValidatedCreatorEquation();
-      const author = dom.authorInput.value.trim() || "Anonymous";
-      const token = await encodePuzzle({
+      const puzzleName = await requestPuzzleName();
+      if (puzzleName === null) {
+        setStatus(dom.creatorStatus, "Export canceled.");
+        return;
+      }
+
+      const token = await puzzleCrypto.encodePuzzle({
         equation,
-        author,
+        author: puzzleName,
         createdAt: Date.now()
       });
       const url = buildPuzzleUrl(token);
 
-      dom.puzzleLink.value = url;
-      setStatus(dom.creatorStatus, "Puzzle link ready.", "good");
+      await copyText(url);
+      state.lastPuzzleName = puzzleName === DEFAULT_PUZZLE_NAME ? "" : puzzleName;
+      setStatus(dom.creatorStatus, "Puzzle link copied.", "good");
     } catch (error) {
       setStatus(dom.creatorStatus, error.message || "Could not export the puzzle.", "error");
     } finally {
@@ -284,31 +290,59 @@
     return null;
   }
 
+  function requestPuzzleName() {
+    return new Promise((resolve) => {
+      let settled = false;
+
+      function finish(value) {
+        if (settled) return;
+        settled = true;
+        dom.nameForm.removeEventListener("submit", handleSubmit);
+        dom.cancelNameButton.removeEventListener("click", handleCancel);
+        document.removeEventListener("keydown", handleKeydown);
+        dom.nameOverlay.hidden = true;
+        resolve(value);
+      }
+
+      function handleSubmit(event) {
+        event.preventDefault();
+        finish(normalizePuzzleName(dom.puzzleNameInput.value));
+      }
+
+      function handleCancel() {
+        finish(null);
+      }
+
+      function handleKeydown(event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish(null);
+        }
+      }
+
+      dom.puzzleNameInput.value = state.lastPuzzleName;
+      dom.nameOverlay.hidden = false;
+      dom.nameForm.addEventListener("submit", handleSubmit);
+      dom.cancelNameButton.addEventListener("click", handleCancel);
+      document.addEventListener("keydown", handleKeydown);
+
+      window.setTimeout(() => {
+        dom.puzzleNameInput.focus();
+        dom.puzzleNameInput.select();
+      }, 0);
+    });
+  }
+
+  function normalizePuzzleName(value) {
+    const name = String(value || "").trim();
+    return name ? name.slice(0, 80) : DEFAULT_PUZZLE_NAME;
+  }
+
   function extractFBody(latex) {
     const match = String(latex || "")
       .trim()
       .match(/^f\s*(?:\\left)?\(\s*x\s*(?:\\right)?\)\s*=\s*(.+)$/i);
     return match ? match[1].trim() : "";
-  }
-
-  async function handleCopyLink() {
-    const link = dom.puzzleLink.value.trim();
-    if (!link) {
-      setStatus(dom.creatorStatus, "Export a link first.", "error");
-      return;
-    }
-
-    await copyText(link);
-    setStatus(dom.creatorStatus, "Puzzle link copied.", "good");
-  }
-
-  function handleOpenPuzzle() {
-    const link = dom.puzzleLink.value.trim();
-    if (!link) {
-      setStatus(dom.creatorStatus, "Export a link first.", "error");
-      return;
-    }
-    window.location.href = link;
   }
 
   async function handleHashChange() {
@@ -322,7 +356,7 @@
     setStatus(dom.playerStatus, "Loading puzzle.");
 
     try {
-      const puzzle = await decodePuzzle(token);
+      const puzzle = await puzzleCrypto.decodePuzzle(token);
       if (!puzzle || !puzzle.equation) {
         throw new Error("This puzzle link is missing its function.");
       }
@@ -344,17 +378,16 @@
 
     state.puzzle = {
       equation: String(puzzle.equation || "").trim(),
-      author: String(puzzle.author || "Anonymous").trim() || "Anonymous",
+      name: normalizePuzzleName(puzzle.name || puzzle.author),
       createdAt: Number(puzzle.createdAt) || 0
     };
     state.sampleRows = [];
     state.checkedCandidates = 0;
     state.solvedGuess = "";
-    state.solvedLabel = "";
     state.scanInProgress = false;
     state.scanQueued = false;
 
-    dom.puzzleAuthor.textContent = `By ${state.puzzle.author}`;
+    dom.puzzleName.textContent = state.puzzle.name;
     runInternalPlayerChange(() => {
       state.playerCalc.setBlank();
       state.playerCalc.setMathBounds({
@@ -613,14 +646,11 @@
 
   function completePuzzle(candidate) {
     state.solvedGuess = candidate.body;
-    state.solvedLabel = candidate.label;
     setStatus(dom.playerStatus, "Completed!", "good");
-    showCompletedOverlay(candidate);
+    showCompletedOverlay();
   }
 
-  function showCompletedOverlay(candidate) {
-    const matchedPoints = candidate.matchedPoints || 0;
-    dom.completeSummary.textContent = `Matched ${matchedPoints} sampled points from ${candidate.label}.`;
+  function showCompletedOverlay() {
     dom.includeSpoiler.checked = false;
     updateDiscordMessage();
     dom.completeOverlay.hidden = false;
@@ -636,11 +666,10 @@
       return;
     }
 
-    const author = state.puzzle.author || "Anonymous";
+    const puzzleName = state.puzzle.name || DEFAULT_PUZZLE_NAME;
     const lines = [
-      `I solved ${author}'s Function Guesser puzzle!`,
+      `I solved "${puzzleName}" in Function Guesser!`,
       getCurrentPuzzleUrl(),
-      `Matched automatically from: ${state.solvedLabel || "a Desmos expression"}`
     ];
 
     if (dom.includeSpoiler.checked) {
@@ -739,193 +768,6 @@
   function getCurrentPuzzleUrl() {
     if (!state.currentToken) return window.location.href;
     return buildPuzzleUrl(state.currentToken);
-  }
-
-  async function encodePuzzle(puzzle) {
-    const payload = {
-      v: 2,
-      q: puzzle.equation,
-      a: puzzle.author,
-      t: puzzle.createdAt || Date.now(),
-      pad: randomPad()
-    };
-    const raw = utf8Encode(JSON.stringify(payload));
-
-    if (hasSubtleCrypto()) {
-      const salt = randomBytes(16);
-      const iv = randomBytes(12);
-      const key = await deriveAesKey(salt);
-      const cipher = new Uint8Array(
-        await crypto.subtle.encrypt(
-          {
-            name: "AES-GCM",
-            iv
-          },
-          key,
-          raw
-        )
-      );
-      return TOKEN_PREFIX_AES + base64UrlEncode(concatBytes([salt, iv, cipher]));
-    }
-
-    const salt = randomBytes(12);
-    const masked = fallbackCrypt(raw, salt);
-    return TOKEN_PREFIX_FALLBACK + base64UrlEncode(concatBytes([salt, masked]));
-  }
-
-  async function decodePuzzle(token) {
-    const cleaned = String(token || "").trim();
-
-    if (cleaned.startsWith(TOKEN_PREFIX_AES)) {
-      const bytes = base64UrlDecode(cleaned.slice(TOKEN_PREFIX_AES.length));
-      if (bytes.length < 30) throw new Error("This puzzle link is too short.");
-      const salt = bytes.slice(0, 16);
-      const iv = bytes.slice(16, 28);
-      const cipher = bytes.slice(28);
-      const key = await deriveAesKey(salt);
-      const raw = new Uint8Array(
-        await crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv
-          },
-          key,
-          cipher
-        )
-      );
-      return unpackPuzzlePayload(raw);
-    }
-
-    if (cleaned.startsWith(TOKEN_PREFIX_FALLBACK)) {
-      const bytes = base64UrlDecode(cleaned.slice(TOKEN_PREFIX_FALLBACK.length));
-      if (bytes.length < 13) throw new Error("This puzzle link is too short.");
-      const salt = bytes.slice(0, 12);
-      const masked = bytes.slice(12);
-      return unpackPuzzlePayload(fallbackCrypt(masked, salt));
-    }
-
-    throw new Error("This is not a Function Guesser puzzle link.");
-  }
-
-  function unpackPuzzlePayload(bytes) {
-    const payload = JSON.parse(utf8Decode(bytes));
-    return {
-      equation: payload.q,
-      author: payload.a,
-      createdAt: payload.t
-    };
-  }
-
-  function hasSubtleCrypto() {
-    return Boolean(window.crypto && crypto.subtle && crypto.getRandomValues);
-  }
-
-  async function deriveAesKey(salt) {
-    const keyMaterial = await crypto.subtle.importKey(
-      "raw",
-      utf8Encode(APP_PEPPER),
-      "PBKDF2",
-      false,
-      ["deriveKey"]
-    );
-
-    return crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        salt,
-        iterations: AES_ITERATIONS,
-        hash: "SHA-256"
-      },
-      keyMaterial,
-      {
-        name: "AES-GCM",
-        length: 256
-      },
-      false,
-      ["encrypt", "decrypt"]
-    );
-  }
-
-  function fallbackCrypt(bytes, salt) {
-    let seed = fnv1a(APP_PEPPER);
-    for (const byte of salt) {
-      seed ^= byte;
-      seed = Math.imul(seed, 16777619) >>> 0;
-    }
-
-    const out = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i += 1) {
-      seed ^= seed << 13;
-      seed ^= seed >>> 17;
-      seed ^= seed << 5;
-      const key = (seed ^ (seed >>> 8) ^ (seed >>> 16)) & 255;
-      out[i] = bytes[i] ^ key;
-    }
-    return out;
-  }
-
-  function fnv1a(text) {
-    let hash = 2166136261;
-    for (let i = 0; i < text.length; i += 1) {
-      hash ^= text.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-    return hash >>> 0;
-  }
-
-  function randomBytes(length) {
-    const bytes = new Uint8Array(length);
-    if (window.crypto && crypto.getRandomValues) {
-      crypto.getRandomValues(bytes);
-      return bytes;
-    }
-
-    for (let i = 0; i < length; i += 1) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-    return bytes;
-  }
-
-  function randomPad() {
-    return Array.from(randomBytes(18), (byte) => byte.toString(36).padStart(2, "0")).join("");
-  }
-
-  function concatBytes(parts) {
-    const total = parts.reduce((sum, part) => sum + part.length, 0);
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const part of parts) {
-      out.set(part, offset);
-      offset += part.length;
-    }
-    return out;
-  }
-
-  function base64UrlEncode(bytes) {
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-    }
-    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  }
-
-  function base64UrlDecode(value) {
-    let base64 = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
-    while (base64.length % 4) base64 += "=";
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  }
-
-  function utf8Encode(text) {
-    return new TextEncoder().encode(text);
-  }
-
-  function utf8Decode(bytes) {
-    return new TextDecoder().decode(bytes);
   }
 
   async function copyText(text) {
