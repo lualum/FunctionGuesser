@@ -3,6 +3,7 @@
 
   const CREATOR_EXPR_ID = "creator-secret-function";
   const SECRET_EXPR_ID = "__fg_hidden_secret";
+  const TARGET_EXPR_ID = "__fg_target_graph";
   const CHECK_EXPR_ID = "__fg_hidden_check";
   const MAX_FORMULA_LENGTH = 260;
   const MATCH_PERCENT_TOLERANCE = 0.001;
@@ -404,9 +405,16 @@
       state.playerCalc.setExpression({
         id: SECRET_EXPR_ID,
         latex: `f(x)=${state.puzzle.equation}`,
-        hidden: false,
+        hidden: true,
         secret: true,
         color: "#1b2428"
+      });
+      state.playerCalc.setExpression({
+        id: TARGET_EXPR_ID,
+        latex: "f(x)",
+        hidden: false,
+        color: "#1b2428",
+        lineWidth: 3
       });
     });
 
